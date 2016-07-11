@@ -29,6 +29,7 @@ namespace aae\ui {
 			if (!$this->_allowHTML) $markdownText = $this->_removeHtml($markdownText);
 			$markdownText = $this->_resolveEscapeCharacters($markdownText);
 
+			$markdownText = $this->_insertGlobalLinks($markdownText);
 			$links    = $this->_extractLinks($markdownText);
 			$markdownText = $this->_replaceLinks($markdownText, $links);
 
@@ -133,6 +134,24 @@ namespace aae\ui {
 
 			return $markdownText;
 		}
+		// TODO: extract only links to prevent possible security vulnerability
+		private function _insertGlobalLinks($markdownText) {
+			$regex = "/
+				(?<beginning>\[__GLOBAL__\]\:\s*)
+				(?<fileName>[^\s]*)
+				(?<end>\s*\n|\s*$)
+			/sx";
+			$callback = function ($matches) {
+				$fileName = $matches["fileName"];
+				$fileContent = file_get_contents($_SERVER["DOCUMENT_ROOT"].DIRECTORY_SEPARATOR.$fileName);
+				return $fileContent;
+			};
+
+			$markdownText = preg_replace_callback($regex, $callback, $markdownText);
+
+			return $markdownText;
+		}
+		//_insertGlobalLinks($markdownText)
 		private function _insertCssClassSpan($markdownText) {
 			$regex      = '/
 				(\{\.)

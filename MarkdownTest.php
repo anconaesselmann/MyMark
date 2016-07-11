@@ -415,6 +415,34 @@ namespace aae\ui {
 			);
 		}
 
+
+
+// []:
+
+
+		/**
+		 * @dataProvider dataProvider_getHTML_insert_global_links
+		 */
+		public function test_getHTML_insert_global_links($markdownText, $expected) {
+			// Setup
+			$obj = new Markdown();
+
+			$_SERVER["DOCUMENT_ROOT"] = dirname(__FILE__).DIRECTORY_SEPARATOR."MarkdownTestData";
+
+			// echo "Document root:".$_SERVER["DOCUMENT_ROOT"];
+
+			// Testing
+			$result = $obj->getHTML($markdownText);
+
+			// Verification
+			$this->assertEquals($expected, $result);
+		}
+		public function dataProvider_getHTML_insert_global_links() {
+			return array(
+				array("testing\n[hello][link1], [hi][link2]\nend\n[__GLOBAL__]: /links.md", '<p>testing<br /><a href="/link1/abc">hello</a>, <a href="/link2/abc">hi</a><br />end</p>')
+			);
+		}
+
 	}
 	/*
 	Write test for:
