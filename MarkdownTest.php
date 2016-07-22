@@ -443,6 +443,30 @@ namespace aae\ui {
 			);
 		}
 
+
+		/**
+		 * @dataProvider dataProvider_getHTML_set_ids_for_dl_elements
+		 */
+		public function test_getHTML_set_ids_for_dl_elements($markdownText, $expected) {
+			// Setup
+			$obj = new Markdown();
+
+			// Testing
+			$result = $obj->getHTML($markdownText);
+
+			// Verification
+			$this->assertEquals($expected, $result);
+		}
+		public function dataProvider_getHTML_set_ids_for_dl_elements() {
+			return array(
+				array("? {Main} Part - Sub", '<dl><dt id="main-list">Main Part</dt><dd><p>Sub</p></dd></dl>'),
+				array("? {Main With Other} Part - Sub", '<dl><dt id="main-with-other-list">Main With Other Part</dt><dd><p>Sub</p></dd></dl>'),
+				array("[{Caption} With Part][link]\n[link]: /test\n", '<p><a href="/test" id="caption-link">Caption With Part</a></p>'),
+				array("? [{Main}][link] Part - Sub\n[link]: /test\n", '<dl><dt><a href="/test" id="main-link">Main</a> Part</dt><dd><p>Sub</p></dd></dl>'),
+
+			);
+		}
+
 	}
 	/*
 	Write test for:

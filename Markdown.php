@@ -11,7 +11,7 @@ namespace aae\ui {
 		const ALLOW_HTML = 1;
 		const DISPLAY_ATTRIBUTION = 2;
 
-		private $_allowHTML = false, $_displayAttribution = false, $_fileName = false;
+		private $_allowHTML = false, $_displayAttribution = false, $_fileName = false, $_externalLinks = false;
 		public function __construct($settings = false) {
 			if ($settings & Markdown::ALLOW_HTML) {
 				$this->_allowHTML = true;
@@ -22,6 +22,9 @@ namespace aae\ui {
 			$this->paragraphOpenTag   = "<p>";
 			$this->paragraphCloseTag  = "</p>";
 		}
+		public function useExternalLinks($value = true) {
+			$this->_externalLinks = (bool)$value;
+		}
 		public function displayAttribution() {
 			$this->_displayAttribution = true;
 		}
@@ -30,6 +33,7 @@ namespace aae\ui {
 			$markdownText = $this->_resolveEscapeCharacters($markdownText);
 
 			$markdownText = $this->_insertGlobalLinks($markdownText);
+			$markdownText = $this->_insertExternalContent($markdownText);
 			$links    = $this->_extractLinks($markdownText);
 			$markdownText = $this->_replaceLinks($markdownText, $links);
 
@@ -64,6 +68,30 @@ namespace aae\ui {
 
 		private function _insertAttribution($markdownText) {
 			if ($this->_displayAttribution === true) {
+				$target = ($this->_externalLinks === true) ? ' target="_blank"' : "";
+				$markdownText = "<!--
+
+    The following content was
+  _____                           _           _            _ _   _
+ / ____|                         | |         | |          (_) | | |
+| |  __  ___ _ __   ___ _ __ __ _| |_ ___  __| | __      ___| |_| |__
+| | |_ |/ _ \ '_ \ / _ \ '__/ _` | __/ _ \/ _` | \ \ /\ / / | __| '_ \
+| |__| |  __/ | | |  __/ | | (_| | ||  __/ (_| |  \ V  V /| | |_| | | |
+ \_____|\___|_| |_|\___|_|  \__,_|\__\___|\__,_|   \_/\_/ |_|\__|_| |_|
+                           __  __            _
+                          |  \/  |          | |
+           _ __ ___  _   _| \  / | __ _ _ __| | __
+          | '_ ` _ \| | | | |\/| |/ _` | '__| |/ /
+          | | | | | | |_| | |  | | (_| | |  |   <
+          |_| |_| |_|\__, |_|  |_|\__,_|_|  |_|\_\
+                      __/ |
+                     |___/
+    © ".date("Y")." Axel Ancona Esselmann
+    www.anconaesselmann.com
+    myMark is open source: https://github.com/anconaesselmann/MyMark
+
+
+-->".$markdownText;
 				$originalContentStatement = "";
 				if ($this->_fileName) {
 					$fileName = realpath($this->_fileName);
@@ -77,10 +105,10 @@ namespace aae\ui {
 
 					if ($strPos !== false) {
 						$originalContentLink = substr($fileName, strlen($documentRoot));
-						$originalContentStatement = " View the original file <a href=\"$originalContentLink\">here</a>.";
+						$originalContentStatement = " View the original file <a href=\"$originalContentLink\"$target>here</a>.";
 					}
 				}
-				$markdownText .= '<div class="attribution">This page was rendered with <a href="https://github.com/anconaesselmann/MyMark">MyMark</a>, a Markdown flavor developed by <a href="http://anconaesselmann.com">Axel Ancona Esselmann</a>.'.$originalContentStatement.'</div>';
+				$markdownText .= '<div class="attribution">This page was rendered with <a href="https://github.com/anconaesselmann/MyMark">MyMark</a>, a Markdown flavor developed by <a href="http://anconaesselmann.com"'.$target.'>Axel Ancona Esselmann</a>.'.$originalContentStatement.'</div>';
 
 			}
 			return $markdownText;
@@ -151,17 +179,38 @@ namespace aae\ui {
 
 			return $markdownText;
 		}
-		//_insertGlobalLinks($markdownText)
+		private function _insertExternalContent($markdownText) {
+			$attributionStatus = $this->_displayAttribution;
+			$this->_displayAttribution = false;
+			$regex = "/
+				(?<beginning>\[__EXTERNAL__\]\:\s*)
+				(?<fileName>[^\s]*)
+				(?<end>\s*\n|\s*$)
+			/sx";
+			$callback = function ($matches) {
+				$fileName = $matches["fileName"];
+				$fileContent = file_get_contents($_SERVER["DOCUMENT_ROOT"].DIRECTORY_SEPARATOR.$fileName);
+				$externalMarkup = $this->getHTML($fileContent);
+				return $externalMarkup;
+			};
+
+			$markdownText = preg_replace_callback($regex, $callback, $markdownText);
+
+			$this->_displayAttribution = $attributionStatus;
+			return $markdownText;
+		}
+
 		private function _insertCssClassSpan($markdownText) {
 			$regex      = '/
 				(\{\.)
 				(?<cssClass>[^\s]+)
-				(\s+)
+				(\s)
 				(?<body>[^\}]+)
 				(\})
 			/sx';
 			$callback = function ($matches) {
-				$htmlHeading      = "<span class=\"".$matches["cssClass"]."\">".$matches["body"]."</span>";
+				$classes = str_replace(".", " ", $matches["cssClass"]);
+				$htmlHeading      = "<span class=\"".$classes."\">".$matches["body"]."</span>";
 				return $htmlHeading;
 			};
 
@@ -194,6 +243,38 @@ namespace aae\ui {
 			return $result;
 		}
 
+		private function _getCssClassAndId($linkKind) {
+			$idString         = "";
+			$classesString    = "";
+			$patternExtractId = "/
+				(?P<pre>\#[a-z,A-Z,0-9,\-_]+)
+				(?P<post>.?)
+			/x";
+			$extractIdCallback = function ($matches) use (&$idString) {
+				$idString = $matches["pre"];
+				return $matches["post"];
+			};
+			$linkKind = preg_replace_callback($patternExtractId, $extractIdCallback, $linkKind);
+
+			$patternExtractClasses = "/
+				(?P<pre>\.[a-z,A-Z,0-9,\-_\.]+)
+				(?P<post>.?)
+			/x";
+			$extractClassesCallback = function ($matches) use (&$classesString) {
+				$classesString = $matches["pre"];
+				return $matches["post"];
+			};
+			$linkKind = preg_replace_callback($patternExtractClasses, $extractClassesCallback, $linkKind);
+
+			if (strlen($idString) > 0) {
+				$idString = " id=\"".trim(str_replace("#", " ", $idString))."\"";
+			}
+			if (strlen($classesString) > 0) {
+				$classesString = " class=\"".trim(str_replace(".", " ", $classesString))."\"";
+			}
+			return [$idString, $classesString];
+		}
+
 		private function _replaceLinks($markdownText, $links) {
 			foreach ($links as $linkNbr => $link) {
 				$linkParts = explode(";", $linkNbr);
@@ -214,6 +295,8 @@ namespace aae\ui {
 							break;
 
 						default:
+							list($id, $classes) = $this->_getCssClassAndId($linkType);
+							$markdownText = $this->_replaceHyperLink($markdownText, $linkNbr, $link, $id, $classes);
 							break;
 					}
 				} else {
@@ -233,16 +316,21 @@ namespace aae\ui {
 				(?=[^w]|$)
 			/x";
 			$explicitLinkCallback = function ($matches) {
-				return "<a href=\"".$matches["link"]."\">".$matches["link"]."</a>";
+				$target = ($this->_externalLinks === true) ? ' target="_blank"' : "";
+				return "<a href=\"".$matches["link"]."$target\">".$matches["link"]."</a>";
 			};
 			return preg_replace_callback($patternExplicitLink, $explicitLinkCallback, $markdownText);
 		}
 
-		private function _replaceHyperLink($markdownText, $linkNbr, $link) {
+		private function _replaceHyperLink($markdownText, $linkNbr, $link, $id = "", $classes = "") {
+			$target = ($this->_externalLinks === true) ? ' target="_blank"' : "";
 			$regex = "/([^\s^\]]+)(\[$linkNbr\])/";
-			$markdownText = preg_replace($regex, "<a href=\"$link\">$1</a>", $markdownText);
-			$regex = "/(\[)([^\]]+)([\]])(\[$linkNbr\])/";
-			return preg_replace($regex, "<a href=\"$link\">$2</a>", $markdownText);
+			$markdownText = preg_replace($regex, "<a href=\"$link\"$target>$1</a>", $markdownText);
+			$regex = "/(\[)(?P<caption>[^\]]+)([\]])(\[$linkNbr\])/";
+			return preg_replace_callback($regex, function ($matches) use ($link, $classes, $id, $target) {
+				list($caption, $autoId) = $this->_getIdAndPart($matches["caption"], "link");
+				return "<a href=\"$link\"$autoId$id$classes$target>".$caption."</a>";
+			}, $markdownText);
 		}
 
 		private function _replaceImages($markdownText, $linkNbr, $link) {
@@ -298,9 +386,9 @@ namespace aae\ui {
 						^|\n 			# 	the beginning of a string or a newline.
 					)\#+				# 	followed by 1 to 6 #
 				)
-				(?:\s*)					# 	throw away all whitespace between hash-tags and heading
+				(?:\s+)					# 	throw away all whitespace between hash-tags and heading. One character of WS is required
 				(?<heading>
-					[^\#]+?				#	the heading body
+					[^\n]+?				#	the heading body
 				)
 				(?:[\s\#]*)				#	throw away all whitespace and hash-tags
 				(?=
@@ -310,9 +398,11 @@ namespace aae\ui {
 
 			$headingCallback = function ($matches) {
 				$headingType      = (string)strlen(trim($matches["headingType"]));
-				$headingOpening   = "<h$headingType>";
+				$heading          = $matches["heading"];
+				list($heading, $idString) = $this->_getIdAndPart($heading, "heading");
+				$headingOpening   = "<h$headingType$idString>";
 				$headingCosing    = "</h$headingType>";
-				$htmlHeading      = $headingOpening.$matches["heading"].$headingCosing;
+				$htmlHeading      = $headingOpening.$heading.$headingCosing;
 				return "</p>".$htmlHeading."<p>";
 			};
 
@@ -352,10 +442,27 @@ namespace aae\ui {
 			$markdownText = preg_replace($regex, $this->paragraphCloseTag."<hr />".$this->paragraphOpenTag, $markdownText);
 			return $markdownText;
 		}
+		private function _getIdAndPart($term, $idPost) {
+			$idString = "";
+			$openingBracePos = strPos($term, "{");
+			if ($openingBracePos !== false) {
+				$closingBracePos = strPos($term, "}");
+				if ($closingBracePos !== false && $closingBracePos > $openingBracePos) {
+					$idLen = $closingBracePos - $openingBracePos - 1;
+					$idStringRaw = substr($term, $openingBracePos + 1, $idLen);
+					$beforeId = substr($term, 0, $openingBracePos);
+					$afterId  = substr($term, $closingBracePos + 1);
+					$term = $beforeId.$idStringRaw.$afterId;
+					$idStringRaw = str_replace(" ", "-", $idStringRaw);
+					$idString = ' id="'.strtolower($idStringRaw)."-$idPost\"";
+				}
+			}
+			return [$term, $idString];
+		}
 
 		public function _replaceLists($markdownText) {
 			$listTypes = array(
-				new ListType("[\?]+\s", "<dl>", "</dl>"),
+				new ListType("[\?]+\s",        "<dl>",            "</dl>"),
 				new ListType("[IVX]+[\.\)]\s", "<ol type=\"I\">", "</ol>"),
 				new ListType("[ivx]+[\.\)]\s", "<ol type=\"i\">", "</ol>"),
 				new ListType("[\d]+[\.\)]\s" , "<ol>"           , "</ol>"),
@@ -434,10 +541,12 @@ namespace aae\ui {
 							$regex = "/\n\s/";
 							$listItem = preg_replace($regex, "\n", $matches['listItem']);
 							if ($matches["listType"] == "? ") {
-								$dashPos = strpos($listItem, "-");
+								$dashPos = strpos($listItem, " - ");
 								$term = trim(substr($listItem, 0, $dashPos));
-								$definition = trim(substr($listItem, $dashPos+1));
-								$listItem = "<dt>$term</dt><dd><p>$definition</p></dd>";
+								$definition = trim(substr($listItem, $dashPos+2+1));
+
+								list($term, $idString) = $this->_getIdAndPart($term, "list");
+								$listItem = "<dt$idString>$term</dt><dd><p>$definition</p></dd>";
 							} else {
 
 								$listItem = "<li><p>".$listItem."</p></li>";
